@@ -1,0 +1,33 @@
+# Generated Xcode project (recreated from project.yml via `xcodegen`)
+*.xcodeproj
+*.xcworkspace
+
+# Xcode build output
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+fastlane/README.md
+
+# Signing material — must NEVER be committed
+*.mobileprovision
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+
+# Build artifacts
+*.ipa
+*.dSYM.zip
+
+# Ruby
+vendor/bundle/
+.bundle/
+
+# macOS
+.DS_Store

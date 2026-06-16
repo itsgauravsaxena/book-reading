@@ -1,0 +1,11 @@
+# fastlane match — code signing storage.
+# Certs + provisioning profiles live (encrypted) in a SEPARATE private git repo.
+git_url(ENV["MATCH_GIT_URL"])
+storage_mode("git")
+type("appstore")
+
+# Both the app and its widget extension need a distribution profile.
+app_identifier([
+  "com.ymga.bibliophil",
+  "com.ymga.bibliophil.widget"
+])

@@ -1,0 +1,4 @@
+# App identity for fastlane. Most values come from environment variables / CI secrets
+# so nothing secret is committed.
+app_identifier(ENV["APP_IDENTIFIER"] || "com.ymga.bibliophil")
+team_id(ENV["TEAM_ID"]) # 10-char Apple Developer Team ID (App Store Connect > Membership)

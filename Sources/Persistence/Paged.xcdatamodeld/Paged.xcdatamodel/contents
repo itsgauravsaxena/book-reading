@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="21754" systemVersion="21H1320" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="Book" representedClassName="BookEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="addedAt" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="authorsRaw" optional="YES" attributeType="String"/>
+        <attribute name="coverURL" optional="YES" attributeType="String"/>
+        <attribute name="currentPage" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="externalId" optional="YES" attributeType="String"/>
+        <attribute name="finishedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isbn" optional="YES" attributeType="String"/>
+        <attribute name="notes" optional="YES" attributeType="String"/>
+        <attribute name="pageCount" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="source" optional="YES" attributeType="String"/>
+        <attribute name="title" attributeType="String"/>
+        <relationship name="sessions" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="ReadingSession" inverseName="book" inverseEntity="ReadingSession"/>
+    </entity>
+    <entity name="ReadingSession" representedClassName="ReadingSessionEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="dayKey" attributeType="String"/>
+        <attribute name="durationSeconds" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="endedAt" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="pagesRead" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="startedAt" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="book" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Book" inverseName="sessions" inverseEntity="Book"/>
+        <fetchIndex name="byDayKey">
+            <fetchIndexElement property="dayKey" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="byStartedAt">
+            <fetchIndexElement property="startedAt" type="Binary" order="ascending"/>
+        </fetchIndex>
+    </entity>
+    <entity name="DailyGoal" representedClassName="DailyGoalEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="effectiveFrom" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="minutesPerDay" attributeType="Integer 32" defaultValueString="20" usesScalarValueType="YES"/>
+    </entity>
+</model>
