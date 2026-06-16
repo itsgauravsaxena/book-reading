@@ -1,0 +1,79 @@
+workflows:
+  ios-beta:
+    name: iOS Beta (TestFlight)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      groups:
+        # Define these variable groups in the Codemagic UI:
+        #   App settings  > Environment variables
+        # ----- group: appstore -----
+        #   ASC_KEY_ID            App Store Connect API key id
+        #   ASC_ISSUER_ID         App Store Connect issuer id
+        #   ASC_KEY_P8            base64-encoded contents of the .p8 key  (mark "secure")
+        #   TEAM_ID               10-char Apple Developer Team id
+        # ----- group: match -----
+        #   MATCH_GIT_URL         git repo holding the match certs
+        #   MATCH_PASSWORD        match encryption passphrase            (mark "secure")
+        #   MATCH_GIT_BASIC_AUTHORIZATION   base64 user:token for the match repo (mark "secure")
+        - appstore
+        - match
+      vars:
+        CI: "true"
+        # match runs read-only on CI. Set to "false" once (first run) to create certs,
+        # then set back to "true".
+        MATCH_READONLY: "true"
+      xcode: latest
+      ruby: 3.2
+    cache:
+      cache_paths:
+        - $HOME/.gem
+        - vendor/bundle
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "v*"
+          include: true
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+      - name: Install bundler gems
+        script: |
+          bundle config set --local path 'vendor/bundle'
+          bundle install
+      - name: fastlane beta
+        script: bundle exec fastlane beta
+    artifacts:
+      - "*.ipa"
+      - /tmp/xcodebuild_logs/*.log
+
+  ios-release:
+    name: iOS Release (App Store)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      groups:
+        - appstore
+        - match
+      vars:
+        CI: "true"
+        MATCH_READONLY: "true"
+      xcode: latest
+      ruby: 3.2
+    cache:
+      cache_paths:
+        - $HOME/.gem
+        - vendor/bundle
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+      - name: Install bundler gems
+        script: |
+          bundle config set --local path 'vendor/bundle'
+          bundle install
+      - name: fastlane release
+        script: bundle exec fastlane release
+    artifacts:
+      - "*.ipa"
+      - /tmp/xcodebuild_logs/*.log
