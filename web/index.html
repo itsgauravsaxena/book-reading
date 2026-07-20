@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>bibliophil</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+  <div id="authLoading" class="auth-loading">Loading…</div>
+
+  <div id="authScreen" class="auth-screen" style="display:none;">
+    <div class="auth-card">
+      <div class="brand"><span class="mark">📖</span><span class="name">bibliophil</span></div>
+      <h1 id="authTitle">Sign in</h1>
+      <p class="sub">Your reading library, synced with your account.</p>
+
+      <p class="auth-error" id="authError"></p>
+
+      <form id="authForm">
+        <div class="field">
+          <label for="authEmail">Email</label>
+          <input id="authEmail" type="email" autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="authPassword">Password</label>
+          <input id="authPassword" type="password" autocomplete="current-password" required minlength="6" />
+        </div>
+        <button type="submit" class="btn primary" id="authSubmit">Sign in</button>
+      </form>
+
+      <div class="auth-divider">or</div>
+      <button class="btn google" id="googleBtn"><span class="g">G</span> Continue with Google</button>
+
+      <p class="auth-switch">
+        <span id="authSwitchLabel">Don't have an account?</span>
+        <button type="button" id="authSwitchBtn">Create one</button>
+      </p>
+    </div>
+  </div>
+
+  <div id="appRoot" class="app" style="display:none;">
+    <aside class="rail">
+      <div class="brand">
+        <span class="mark">📖</span>
+        <span class="name">bibliophil</span>
+      </div>
+      <nav id="tabbar" class="tabbar"></nav>
+      <div class="rail-foot">
+        <p id="accountNote"></p>
+        <button class="reset" id="sampleBtn">Add sample books</button>
+        <button class="reset" id="signOutBtn">Sign out</button>
+      </div>
+    </aside>
+
+    <div class="main-col">
+      <div id="titlebar" class="titlebar"></div>
+      <div id="screen" class="screen"></div>
+    </div>
+  </div>
+
+  <div id="sheetBackdrop" class="sheet-backdrop">
+    <div id="sheet" class="sheet"></div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
