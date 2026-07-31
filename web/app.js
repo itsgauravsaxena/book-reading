@@ -37,6 +37,14 @@ import {
     for (var i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
     return COVER_COLORS[hash % COVER_COLORS.length];
   }
+  function coverHtml(b, extraClass) {
+    var cls = "cover" + (extraClass ? " " + extraClass : "");
+    var inner = escapeHtml(initials(b.title));
+    if (b.coverUrl) {
+      inner += '<img src="' + escapeHtml(b.coverUrl) + '" alt="" loading="lazy" onerror="this.remove()" />';
+    }
+    return '<div class="' + cls + '" style="background:' + coverColor(b.id) + '">' + inner + '</div>';
+  }
   function initials(title) {
     if (!title) return "?";
     var words = title.trim().split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w[0]); });
@@ -194,7 +202,7 @@ import {
         var frac = progressFraction(b);
         return '<div class="row" data-open="' + b.id + '">' +
           '<button class="row-del" data-del="' + b.id + '" aria-label="Delete">✕</button>' +
-          '<div class="cover" style="background:' + coverColor(b.id) + '">' + escapeHtml(initials(b.title)) + '</div>' +
+          coverHtml(b) +
           '<div class="row-body">' +
             '<p class="row-title">' + escapeHtml(b.title) + '</p>' +
             '<p class="row-author">' + escapeHtml(b.authors || "Unknown author") + '</p>' +
@@ -239,27 +247,110 @@ import {
     } catch (err) { reportError(err); }
   }
 
+  // Detects a 10- or 13-digit ISBN (allowing spaces/hyphens, trailing X on ISBN-10).
+  function normalizeIsbn(q) {
+    var compact = q.replace(/[\s-]/g, "");
+    if (/^\d{13}$/.test(compact)) return compact;
+    if (/^\d{9}[\dXx]$/.test(compact)) return compact.toUpperCase();
+    return null;
+  }
+
+  // Looks books up via the Open Library search API (public, no key, CORS-enabled).
+  async function searchOpenLibrary(q) {
+    var isbn = normalizeIsbn(q);
+    var fields = "key,title,author_name,first_publish_year,number_of_pages_median,cover_i,isbn";
+    var url = "https://openlibrary.org/search.json?limit=12&fields=" + fields + "&" +
+      (isbn ? "isbn=" + encodeURIComponent(isbn) : "q=" + encodeURIComponent(q));
+    var res = await fetch(url);
+    if (!res.ok) throw new Error("Search failed (" + res.status + ")");
+    var data = await res.json();
+    return (data.docs || []).map(function (d) {
+      var coverUrl = "";
+      if (d.cover_i) coverUrl = "https://covers.openlibrary.org/b/id/" + d.cover_i + "-M.jpg";
+      else if (d.isbn && d.isbn.length) coverUrl = "https://covers.openlibrary.org/b/isbn/" + d.isbn[0] + "-M.jpg";
+      return {
+        title: d.title || "",
+        authors: (d.author_name || []).join(", "),
+        pageCount: d.number_of_pages_median > 0 ? d.number_of_pages_median : 0,
+        year: d.first_publish_year || null,
+        coverUrl: coverUrl
+      };
+    }).filter(function (r) { return r.title; });
+  }
+
   function openAddBookSheet() {
+    var selectedCover = "";
     sheetEl.innerHTML =
       '<div class="titlebar"><button class="action text" id="cancelAdd">Cancel</button><h2>Add Book</h2><button class="action text" id="saveAdd" style="font-weight:700;">Save</button></div>' +
       '<div class="screen">' +
+        '<div class="field"><label for="f-search">Search by title or ISBN</label>' +
+          '<div class="search-row"><input id="f-search" placeholder="e.g. Klara and the Sun or 9780571364886" />' +
+          '<button type="button" class="btn small primary" id="f-searchBtn">Search</button></div></div>' +
+        '<div id="f-results" class="search-results"></div>' +
+        '<div class="or-divider">or enter manually</div>' +
         '<div class="field"><label for="f-title">Title</label><input id="f-title" placeholder="e.g. Klara and the Sun" /></div>' +
         '<div class="field"><label for="f-authors">Authors</label><input id="f-authors" placeholder="Comma-separated" /></div>' +
         '<div class="field"><label for="f-pages">Page count (optional)</label><input id="f-pages" inputmode="numeric" placeholder="e.g. 320" /></div>' +
       '</div>';
+
     document.getElementById("cancelAdd").addEventListener("click", closeSheet);
+    var searchInput = document.getElementById("f-search");
+    var searchBtn = document.getElementById("f-searchBtn");
+    var resultsEl = document.getElementById("f-results");
     var titleInput = document.getElementById("f-title");
+    var authorsInput = document.getElementById("f-authors");
+    var pagesInput = document.getElementById("f-pages");
     var saveBtn = document.getElementById("saveAdd");
+
     function refreshDisabled() { saveBtn.style.opacity = titleInput.value.trim() ? "1" : "0.4"; }
-    titleInput.addEventListener("input", refreshDisabled);
+    titleInput.addEventListener("input", function () { selectedCover = ""; refreshDisabled(); });
     refreshDisabled();
+
+    async function runSearch() {
+      var q = searchInput.value.trim();
+      if (!q) return;
+      resultsEl.innerHTML = '<p class="search-note">Searching…</p>';
+      try {
+        var results = await searchOpenLibrary(q);
+        if (!results.length) { resultsEl.innerHTML = '<p class="search-note">No matches. Try another title, or enter the book manually below.</p>'; return; }
+        resultsEl.innerHTML = results.map(function (r, i) {
+          var thumb = r.coverUrl
+            ? '<img class="sr-cover" src="' + escapeHtml(r.coverUrl) + '" alt="" loading="lazy" onerror="this.remove()" />'
+            : '<span class="sr-cover ph">' + escapeHtml(initials(r.title)) + '</span>';
+          var sub = [r.authors || "Unknown author", r.year ? String(r.year) : "", r.pageCount ? r.pageCount + " pp" : ""]
+            .filter(Boolean).join(" · ");
+          return '<button type="button" class="search-result" data-i="' + i + '">' + thumb +
+            '<span class="sr-body"><span class="sr-title">' + escapeHtml(r.title) + '</span>' +
+            '<span class="sr-sub">' + escapeHtml(sub) + '</span></span></button>';
+        }).join("");
+        resultsEl.querySelectorAll(".search-result").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var r = results[parseInt(btn.getAttribute("data-i"), 10)];
+            titleInput.value = r.title;
+            authorsInput.value = r.authors;
+            pagesInput.value = r.pageCount ? String(r.pageCount) : "";
+            selectedCover = r.coverUrl || "";
+            resultsEl.innerHTML = '<p class="search-note">Selected — review below and tap Save.</p>';
+            refreshDisabled();
+          });
+        });
+      } catch (err) {
+        resultsEl.innerHTML = '<p class="search-note">Couldn\'t search right now. You can still add the book manually below.</p>';
+        console.error(err);
+      }
+    }
+
+    searchBtn.addEventListener("click", runSearch);
+    searchInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); runSearch(); } });
+
     saveBtn.addEventListener("click", function () {
       var title = titleInput.value.trim();
       if (!title) return;
-      var authors = document.getElementById("f-authors").value.trim();
-      var pages = parseInt(document.getElementById("f-pages").value, 10);
+      var authors = authorsInput.value.trim();
+      var pages = parseInt(pagesInput.value, 10);
       addDoc(booksCol(), {
         title: title, authors: authors, pageCount: isNaN(pages) ? 0 : pages,
+        coverUrl: selectedCover || "",
         currentPage: 0, addedAt: new Date().toISOString(), finishedAt: null
       }).catch(reportError);
       closeSheet();
@@ -286,7 +377,7 @@ import {
       '<div class="detail-grid">' +
         '<div>' +
           '<div class="book-header">' +
-            '<div class="cover lg" style="background:' + coverColor(b.id) + '">' + escapeHtml(initials(b.title)) + '</div>' +
+            coverHtml(b, "lg") +
             '<div class="meta"><h3>' + escapeHtml(b.title) + '</h3><p>' + escapeHtml(b.authors || "Unknown author") + '</p>' +
             (b.finishedAt ? '<p style="color:var(--accent);font-weight:600;margin-top:6px;">✓ Finished</p>' : '') +
             '</div>' +
