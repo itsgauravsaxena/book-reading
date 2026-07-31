@@ -665,6 +665,7 @@ import {
       "auth/email-already-in-use": "An account already exists with that email — try signing in instead.",
       "auth/weak-password": "Password should be at least 6 characters.",
       "auth/popup-closed-by-user": "Google sign-in was closed before finishing.",
+      "auth/operation-not-allowed": "That sign-in method isn't turned on for this project. Use email and password, or enable it in Firebase Authentication.",
       "auth/unauthorized-domain": "This domain isn't authorized for sign-in yet — add it in Firebase Auth settings."
     };
     return (code && map[code]) || (err && err.message) || "Something went wrong.";
