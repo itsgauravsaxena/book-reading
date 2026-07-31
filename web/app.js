@@ -45,6 +45,24 @@ import {
     }
     return '<div class="' + cls + '" style="background:' + coverColor(b.id) + '">' + inner + '</div>';
   }
+  // Effective shelf for a book. Older books have no `status` field, so we
+  // derive it from finishedAt for backward compatibility.
+  function bookStatus(b) {
+    if (b.status) return b.status;
+    return b.finishedAt ? "finished" : "reading";
+  }
+  function starString(n) {
+    n = Math.max(0, Math.min(5, Math.round(n || 0)));
+    return "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n);
+  }
+  function humanDuration(seconds) {
+    seconds = Math.max(0, Math.round(seconds));
+    var h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60);
+    if (h >= 100) return Math.round(h) + "h";
+    if (h > 0) return h + "h " + m + "m";
+    if (m > 0) return m + "m";
+    return "under a minute";
+  }
   function initials(title) {
     if (!title) return "?";
     var words = title.trim().split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w[0]); });
@@ -176,29 +194,67 @@ import {
   }
 
   // ---------- Library ----------
+  var SHELVES = [
+    { id: "want", label: "Want to Read" },
+    { id: "reading", label: "Reading" },
+    { id: "finished", label: "Finished" }
+  ];
+  function shelfCount(id) { return state.books.filter(function (b) { return bookStatus(b) === id; }).length; }
+
   function renderLibrary() {
+    if (nav.search == null) nav.search = "";
+    if (!nav.sort) nav.sort = "added";
     titlebarEl.innerHTML =
       '<h2>Library</h2>' +
       '<button class="action" id="addBtn" aria-label="Add book">＋</button>';
     document.getElementById("addBtn").addEventListener("click", openAddBookSheet);
 
-    var list = state.books.filter(function (b) {
-      return nav.filter === "reading" ? !b.finishedAt : !!b.finishedAt;
-    }).sort(function (a, b) { return new Date(b.addedAt) - new Date(a.addedAt); });
-
     var html = '<div class="segmented">' +
-      ["reading", "finished"].map(function (f) {
-        return '<button data-filter="' + f + '" class="' + (nav.filter === f ? "active" : "") + '">' + (f === "reading" ? "Reading" : "Finished") + '</button>';
-      }).join("") + '</div>';
+      SHELVES.map(function (s) {
+        var count = shelfCount(s.id);
+        return '<button data-filter="' + s.id + '" class="' + (nav.filter === s.id ? "active" : "") + '">' +
+          s.label + (count ? ' <span class="seg-count">' + count + '</span>' : '') + '</button>';
+      }).join("") + '</div>' +
+      '<div class="lib-controls">' +
+        '<input id="libSearch" class="lib-search" type="search" placeholder="Search your shelf…" value="' + escapeHtml(nav.search) + '" />' +
+        '<select id="libSort" class="lib-sort">' +
+          [["added", "Recently added"], ["title", "Title A–Z"], ["progress", "Progress"], ["rating", "Rating"]]
+            .map(function (o) { return '<option value="' + o[0] + '"' + (nav.sort === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") +
+        '</select>' +
+      '</div>' +
+      '<div id="bookList"></div>';
+    screenEl.innerHTML = html;
 
-    if (list.length === 0) {
-      html += '<div class="empty"><div class="glyph">📖</div>' +
-        (nav.filter === "reading"
-          ? '<strong>Your shelf is empty</strong><span>Tap ＋ to add the books you\'re reading.</span>'
-          : '<strong>Nothing finished yet</strong><span>Books you mark finished will show up here.</span>') +
-        '</div>';
-    } else {
-      html += '<div class="book-grid">' + list.map(function (b) {
+    function currentList() {
+      var q = nav.search.trim().toLowerCase();
+      var list = state.books.filter(function (b) { return bookStatus(b) === nav.filter; }).filter(function (b) {
+        if (!q) return true;
+        return (b.title || "").toLowerCase().indexOf(q) >= 0 || (b.authors || "").toLowerCase().indexOf(q) >= 0;
+      });
+      list.sort(function (a, b) {
+        if (nav.sort === "title") return (a.title || "").localeCompare(b.title || "");
+        if (nav.sort === "rating") return (b.rating || 0) - (a.rating || 0) || (new Date(b.addedAt) - new Date(a.addedAt));
+        if (nav.sort === "progress") return progressFraction(b) - progressFraction(a);
+        return new Date(b.addedAt) - new Date(a.addedAt);
+      });
+      return list;
+    }
+
+    function paintList() {
+      var listEl = document.getElementById("bookList");
+      var list = currentList();
+      if (list.length === 0) {
+        var emptyMsg = nav.search.trim()
+          ? '<strong>No matches</strong><span>Nothing on this shelf matches "' + escapeHtml(nav.search.trim()) + '".</span>'
+          : nav.filter === "want"
+            ? '<strong>No wishlist yet</strong><span>Tap ＋ and add books to your "want to read" shelf.</span>'
+            : nav.filter === "reading"
+              ? '<strong>Your shelf is empty</strong><span>Tap ＋ to add the books you\'re reading.</span>'
+              : '<strong>Nothing finished yet</strong><span>Books you mark finished will show up here.</span>';
+        listEl.innerHTML = '<div class="empty"><div class="glyph">📖</div>' + emptyMsg + '</div>';
+        return;
+      }
+      listEl.innerHTML = '<div class="book-grid">' + list.map(function (b) {
         var frac = progressFraction(b);
         return '<div class="row" data-open="' + b.id + '">' +
           '<button class="row-del" data-del="' + b.id + '" aria-label="Delete">✕</button>' +
@@ -206,35 +262,40 @@ import {
           '<div class="row-body">' +
             '<p class="row-title">' + escapeHtml(b.title) + '</p>' +
             '<p class="row-author">' + escapeHtml(b.authors || "Unknown author") + '</p>' +
-            (b.pageCount > 0
+            (b.rating ? '<p class="row-stars">' + starString(b.rating) + '</p>' : '') +
+            (b.pageCount > 0 && nav.filter !== "want"
               ? '<div class="progress-line"><div class="progress-track"><span style="width:' + (frac * 100) + '%"></span></div>' +
                 '<span class="pages">' + b.currentPage + '/' + b.pageCount + '</span></div>'
               : '') +
           '</div>' +
         '</div>';
       }).join("") + '</div>';
+
+      listEl.querySelectorAll("[data-open]").forEach(function (row) {
+        row.addEventListener("click", function (e) {
+          if (e.target.closest("[data-del]")) return;
+          nav.bookId = row.getAttribute("data-open");
+          renderAll();
+        });
+      });
+      listEl.querySelectorAll("[data-del]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var id = btn.getAttribute("data-del");
+          if (confirm("Remove this book and its reading history? This can't be undone.")) {
+            deleteBook(id);
+          }
+        });
+      });
     }
-    screenEl.innerHTML = html;
+
+    paintList();
 
     screenEl.querySelectorAll("[data-filter]").forEach(function (btn) {
       btn.addEventListener("click", function () { nav.filter = btn.getAttribute("data-filter"); renderLibrary(); });
     });
-    screenEl.querySelectorAll("[data-open]").forEach(function (row) {
-      row.addEventListener("click", function (e) {
-        if (e.target.closest("[data-del]")) return;
-        nav.bookId = row.getAttribute("data-open");
-        renderAll();
-      });
-    });
-    screenEl.querySelectorAll("[data-del]").forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        var id = btn.getAttribute("data-del");
-        if (confirm("Remove this book and its reading history? This can't be undone.")) {
-          deleteBook(id);
-        }
-      });
-    });
+    document.getElementById("libSearch").addEventListener("input", function (e) { nav.search = e.target.value; paintList(); });
+    document.getElementById("libSort").addEventListener("change", function (e) { nav.sort = e.target.value; paintList(); });
   }
 
   async function deleteBook(id) {
@@ -291,8 +352,15 @@ import {
         '<div class="field"><label for="f-title">Title</label><input id="f-title" placeholder="e.g. Klara and the Sun" /></div>' +
         '<div class="field"><label for="f-authors">Authors</label><input id="f-authors" placeholder="Comma-separated" /></div>' +
         '<div class="field"><label for="f-pages">Page count (optional)</label><input id="f-pages" inputmode="numeric" placeholder="e.g. 320" /></div>' +
+        '<div class="field"><label>Add to shelf</label>' +
+          '<div class="segmented" id="f-shelf">' +
+            SHELVES.map(function (s) {
+              return '<button type="button" data-shelf="' + s.id + '" class="' + (s.id === "reading" ? "active" : "") + '">' + s.label + '</button>';
+            }).join("") +
+          '</div></div>' +
       '</div>';
 
+    var chosenShelf = "reading";
     document.getElementById("cancelAdd").addEventListener("click", closeSheet);
     var searchInput = document.getElementById("f-search");
     var searchBtn = document.getElementById("f-searchBtn");
@@ -343,15 +411,27 @@ import {
     searchBtn.addEventListener("click", runSearch);
     searchInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); runSearch(); } });
 
+    document.getElementById("f-shelf").querySelectorAll("[data-shelf]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        chosenShelf = btn.getAttribute("data-shelf");
+        document.getElementById("f-shelf").querySelectorAll("[data-shelf]").forEach(function (b2) {
+          b2.classList.toggle("active", b2 === btn);
+        });
+      });
+    });
+
     saveBtn.addEventListener("click", function () {
       var title = titleInput.value.trim();
       if (!title) return;
       var authors = authorsInput.value.trim();
       var pages = parseInt(pagesInput.value, 10);
+      var now = new Date().toISOString();
       addDoc(booksCol(), {
         title: title, authors: authors, pageCount: isNaN(pages) ? 0 : pages,
         coverUrl: selectedCover || "",
-        currentPage: 0, addedAt: new Date().toISOString(), finishedAt: null
+        currentPage: 0, addedAt: now, status: chosenShelf,
+        finishedAt: chosenShelf === "finished" ? now : null,
+        rating: 0, review: ""
       }).catch(reportError);
       closeSheet();
     });
@@ -371,7 +451,22 @@ import {
 
     var total = totalSecondsFor(b.id);
     var frac = progressFraction(b);
+    var status = bookStatus(b);
     var sessions = sessionsFor(b.id).slice().sort(function (a, c) { return new Date(c.startedAt) - new Date(a.startedAt); }).slice(0, 20);
+
+    // Estimated time to finish, from the reader's own pace so far.
+    var paceNote = "";
+    if (status !== "finished" && b.pageCount > 0 && b.currentPage > 0 && b.currentPage < b.pageCount && total > 0) {
+      var secondsPerPage = total / b.currentPage;
+      var secLeft = secondsPerPage * (b.pageCount - b.currentPage);
+      paceNote = '<p class="pace-note">⏳ About ' + humanDuration(secLeft) + ' left at your pace</p>';
+    }
+
+    var statusBadge = status === "finished"
+      ? '<p class="status-badge finished">✓ Finished' + (b.finishedAt ? ' · ' + new Date(b.finishedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : '') + '</p>'
+      : status === "want"
+        ? '<p class="status-badge want">🔖 Want to read</p>'
+        : '<p class="status-badge reading">📖 Currently reading</p>';
 
     screenEl.innerHTML =
       '<div class="detail-grid">' +
@@ -379,7 +474,7 @@ import {
           '<div class="book-header">' +
             coverHtml(b, "lg") +
             '<div class="meta"><h3>' + escapeHtml(b.title) + '</h3><p>' + escapeHtml(b.authors || "Unknown author") + '</p>' +
-            (b.finishedAt ? '<p style="color:var(--accent);font-weight:600;margin-top:6px;">✓ Finished</p>' : '') +
+            statusBadge +
             '</div>' +
           '</div>' +
           '<div class="card">' +
@@ -388,8 +483,20 @@ import {
               '<div class="right"><p class="label">Total time</p><p class="value">' + clockFmt(total) + '</p></div>' +
             '</div>' +
             '<div class="progress-track" style="height:6px;"><span style="width:' + (frac * 100) + '%"></span></div>' +
+            paceNote +
             '<button class="btn primary" id="startReading">▶ Start reading</button>' +
             '<button class="btn secondary" id="logPast">🗓 Log past session</button>' +
+          '</div>' +
+          '<div class="card">' +
+            '<p class="section-title" style="margin-top:0;">Your rating &amp; notes</p>' +
+            '<div class="stars" id="starRow">' +
+              [1, 2, 3, 4, 5].map(function (n) {
+                return '<button type="button" class="star' + ((b.rating || 0) >= n ? " on" : "") + '" data-star="' + n + '" aria-label="' + n + ' stars">★</button>';
+              }).join("") +
+              (b.rating ? '<button type="button" class="star-clear" id="starClear">clear</button>' : '') +
+            '</div>' +
+            '<textarea id="reviewBox" class="review-box" rows="4" placeholder="Jot down thoughts, quotes, or a review…">' + escapeHtml(b.review || "") + '</textarea>' +
+            '<button class="btn small primary" id="saveReview" disabled>Save notes</button>' +
           '</div>' +
         '</div>' +
         '<div>' +
@@ -406,20 +513,54 @@ import {
 
     document.getElementById("startReading").addEventListener("click", function () { openTimerSheet(b.id); });
     document.getElementById("logPast").addEventListener("click", function () { openLogSessionSheet(b.id); });
+
+    // Star rating — saves immediately on click.
+    screenEl.querySelectorAll(".star[data-star]").forEach(function (starBtn) {
+      starBtn.addEventListener("click", function () {
+        var val = parseInt(starBtn.getAttribute("data-star"), 10);
+        updateDoc(doc(booksCol(), b.id), { rating: val }).catch(reportError);
+      });
+    });
+    var starClear = document.getElementById("starClear");
+    if (starClear) starClear.addEventListener("click", function () {
+      updateDoc(doc(booksCol(), b.id), { rating: 0 }).catch(reportError);
+    });
+
+    // Review / notes — enable Save when the text changes.
+    var reviewBox = document.getElementById("reviewBox");
+    var saveReview = document.getElementById("saveReview");
+    reviewBox.addEventListener("input", function () {
+      saveReview.disabled = reviewBox.value === (b.review || "");
+    });
+    saveReview.addEventListener("click", function () {
+      saveReview.disabled = true;
+      updateDoc(doc(booksCol(), b.id), { review: reviewBox.value }).catch(reportError);
+    });
   }
 
   function openBookMenu(b) {
+    var st = bookStatus(b);
     var choice = prompt(
-      (b.finishedAt ? "1) Mark as reading\n" : "1) Mark as finished\n") +
-      "2) Update current page\n3) Log past session\n\nEnter 1, 2, or 3:"
+      "What would you like to do?\n\n" +
+      "1) Move to Want to read\n" +
+      "2) Move to Currently reading\n" +
+      "3) Mark as finished\n" +
+      "4) Update current page\n" +
+      "5) Log past session\n\n" +
+      "Currently: " + (st === "want" ? "Want to read" : st === "finished" ? "Finished" : "Reading") +
+      "\nEnter 1–5:"
     );
     if (choice === "1") {
-      updateDoc(doc(booksCol(), b.id), { finishedAt: b.finishedAt ? null : new Date().toISOString() }).catch(reportError);
+      updateDoc(doc(booksCol(), b.id), { status: "want", finishedAt: null }).catch(reportError);
     } else if (choice === "2") {
+      updateDoc(doc(booksCol(), b.id), { status: "reading", finishedAt: null }).catch(reportError);
+    } else if (choice === "3") {
+      updateDoc(doc(booksCol(), b.id), { status: "finished", finishedAt: b.finishedAt || new Date().toISOString() }).catch(reportError);
+    } else if (choice === "4") {
       var page = prompt("Current page:", String(b.currentPage));
       var n = parseInt(page, 10);
       if (!isNaN(n) && n >= 0) updateDoc(doc(booksCol(), b.id), { currentPage: n }).catch(reportError);
-    } else if (choice === "3") {
+    } else if (choice === "5") {
       openLogSessionSheet(b.id);
     }
   }
@@ -508,11 +649,14 @@ import {
           bookId: bookId, startedAt: start.toISOString(), durationSeconds: elapsedSeconds,
           pagesRead: isNaN(pagesRead) ? 0 : pagesRead, dayKey: dayKey(start)
         });
+        var updates = {};
         if (!isNaN(newPage) && newPage >= 0) {
-          var updates = { currentPage: newPage };
-          if (b.pageCount > 0 && newPage >= b.pageCount) updates.finishedAt = end.toISOString();
-          await updateDoc(doc(booksCol(), bookId), updates);
+          updates.currentPage = newPage;
+          if (b.pageCount > 0 && newPage >= b.pageCount) { updates.finishedAt = end.toISOString(); updates.status = "finished"; }
         }
+        // Logging time against a wishlist book means you've started it.
+        if (bookStatus(b) === "want" && updates.status !== "finished") updates.status = "reading";
+        if (Object.keys(updates).length) await updateDoc(doc(booksCol(), bookId), updates);
       } catch (err) { reportError(err); }
       timerState = null;
       closeSheet();
@@ -557,7 +701,8 @@ import {
         });
         var updates = {};
         if (!isNaN(current) && current >= 0) updates.currentPage = current;
-        if (finishBox && finishBox.checked) updates.finishedAt = when.toISOString();
+        if (finishBox && finishBox.checked) { updates.finishedAt = when.toISOString(); updates.status = "finished"; }
+        if (bookStatus(b) === "want" && updates.status !== "finished") updates.status = "reading";
         if (Object.keys(updates).length) await updateDoc(doc(booksCol(), bookId), updates);
       } catch (err) { reportError(err); }
       closeSheet();
@@ -579,12 +724,23 @@ import {
   });
 
   // ---------- Goal tab ----------
+  function booksFinishedInYear(year) {
+    return state.books.filter(function (b) {
+      return bookStatus(b) === "finished" && b.finishedAt && new Date(b.finishedAt).getFullYear() === year;
+    }).length;
+  }
+
   function renderGoal() {
-    titlebarEl.innerHTML = '<h2>Daily Goal</h2><span></span>';
+    titlebarEl.innerHTML = '<h2>Goals</h2><span></span>';
     var goalMinutes = state.goal.minutesPerDay || 0;
     var today = todaySeconds();
     var progress = goalMinutes > 0 ? Math.min(1, today / (goalMinutes * 60)) : 0;
     var r = 92, c = 2 * Math.PI * r;
+
+    var year = new Date().getFullYear();
+    var booksTarget = state.goal.booksPerYear || 0;
+    var doneThisYear = booksFinishedInYear(year);
+    var challengeFrac = booksTarget > 0 ? Math.min(1, doneThisYear / booksTarget) : 0;
 
     screenEl.innerHTML =
       '<div class="ring-wrap" style="position:relative;">' +
@@ -604,6 +760,17 @@ import {
         '<div class="slider-row"><span>5</span><input type="range" id="goalSlider" min="5" max="180" step="5" value="' + (goalMinutes || 20) + '" /><span>180</span></div>' +
         '<div class="goal-value-row"><span class="amt" id="goalAmt">' + (goalMinutes || 20) + ' min</span>' +
         '<button class="btn small primary" id="goalSave" disabled>Save</button></div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<p class="section-title" style="margin-top:0;">' + year + ' reading challenge</p>' +
+        '<div class="challenge-head"><span class="challenge-count"><strong>' + doneThisYear + '</strong> of ' + (booksTarget || "—") + ' books</span>' +
+          (booksTarget > 0 && doneThisYear >= booksTarget ? '<span class="hit">✓ Challenge complete!</span>' : '') + '</div>' +
+        '<div class="progress-track" style="height:8px;margin:8px 0 14px;"><span style="width:' + (challengeFrac * 100) + '%"></span></div>' +
+        '<div class="stepper-row"><span>Goal for ' + year + '</span>' +
+          '<div class="stepper"><button type="button" id="booksMinus">−</button>' +
+          '<span id="booksVal">' + (booksTarget || 12) + '</span>' +
+          '<button type="button" id="booksPlus">+</button></div>' +
+          '<button class="btn small primary" id="booksSave" disabled>Save</button></div>' +
       '</div>';
 
     var slider = document.getElementById("goalSlider");
@@ -615,6 +782,16 @@ import {
     });
     saveBtn.addEventListener("click", function () {
       setDoc(goalDocRef(), { minutesPerDay: parseInt(slider.value, 10) }, { merge: true }).catch(reportError);
+    });
+
+    var booksVal = document.getElementById("booksVal");
+    var booksSave = document.getElementById("booksSave");
+    var pending = booksTarget || 12;
+    function refreshBooks() { booksVal.textContent = pending; booksSave.disabled = pending === booksTarget; }
+    document.getElementById("booksMinus").addEventListener("click", function () { pending = Math.max(1, pending - 1); refreshBooks(); });
+    document.getElementById("booksPlus").addEventListener("click", function () { pending = Math.min(365, pending + 1); refreshBooks(); });
+    booksSave.addEventListener("click", function () {
+      setDoc(goalDocRef(), { booksPerYear: pending }, { merge: true }).catch(reportError);
     });
   }
 
