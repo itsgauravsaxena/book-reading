@@ -4,9 +4,24 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>bibliophil</title>
+  <meta name="theme-color" content="#f5f2ea" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)" />
   <link rel="stylesheet" href="./styles.css" />
+  <script>
+    // Apply the saved theme before first paint to avoid a flash of the wrong
+    // theme. Defaults to light unless the user has explicitly chosen otherwise.
+    (function () {
+      try {
+        var t = localStorage.getItem("bibliophil-theme") || "light";
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+        // "system" leaves no attribute, so the prefers-color-scheme media query applies.
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
+
+  <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle light or dark theme" title="Toggle theme">🌙</button>
 
   <div id="authLoading" class="auth-loading">Loading…</div>
 

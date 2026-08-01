@@ -19,6 +19,29 @@ import {
 
   var COVER_COLORS = ["#2f6f5e", "#3a5a8c", "#8c4f3a", "#6b4f8c", "#a3762f", "#3a7a8c", "#7a3a5a"];
 
+  // ---------- theme ----------
+  (function initTheme() {
+    var toggle = document.getElementById("themeToggle");
+    if (!toggle) return;
+    function currentTheme() {
+      var attr = document.documentElement.getAttribute("data-theme");
+      if (attr === "light" || attr === "dark") return attr;
+      // No explicit choice: fall back to the system preference.
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    function paintIcon() {
+      // Show the theme you'll switch TO.
+      toggle.textContent = currentTheme() === "dark" ? "☀️" : "🌙";
+    }
+    toggle.addEventListener("click", function () {
+      var next = currentTheme() === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("bibliophil-theme", next); } catch (e) {}
+      paintIcon();
+    });
+    paintIcon();
+  })();
+
   // ---------- small helpers ----------
   function dayKey(d) {
     var y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
